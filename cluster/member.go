@@ -20,7 +20,9 @@
 
 package cluster
 
-import "github.com/lonng/nano/cluster/clusterpb"
+import (
+	"github.com/lonng/nano/cluster/clusterpb"
+)
 
 type Member struct {
 	isMaster   bool

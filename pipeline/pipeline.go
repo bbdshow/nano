@@ -1,17 +1,17 @@
 package pipeline
 
 import (
+	"github.com/lonng/nano/session"
 	"sync"
 
 	"github.com/lonng/nano/internal/message"
-	"github.com/lonng/nano/session"
 )
 
 type (
 	// Message is the alias of `message.Message`
 	Message = message.Message
 
-	Func func(s *session.Session, msg *message.Message) error
+	Func func(s session.Session, msg *message.Message) error
 
 	Pipeline interface {
 		Outbound() Channel
@@ -25,7 +25,7 @@ type (
 	Channel interface {
 		PushFront(h Func)
 		PushBack(h Func)
-		Process(s *session.Session, msg *message.Message) error
+		Process(s session.Session, msg *message.Message) error
 	}
 
 	pipelineChannel struct {
@@ -62,7 +62,7 @@ func (p *pipelineChannel) PushBack(h Func) {
 }
 
 // Process process message with all pipeline functions
-func (p *pipelineChannel) Process(s *session.Session, msg *message.Message) error {
+func (p *pipelineChannel) Process(s session.Session, msg *message.Message) error {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if len(p.handlers) < 1 {

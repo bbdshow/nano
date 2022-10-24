@@ -4,7 +4,7 @@ type (
 	// LifetimeHandler represents a callback
 	// that will be called when a session close or
 	// session low-level connection broken.
-	LifetimeHandler func(*Session)
+	LifetimeHandler func(Session)
 
 	lifetime struct {
 		// callbacks that emitted on session closed
@@ -20,7 +20,7 @@ func (lt *lifetime) OnClosed(h LifetimeHandler) {
 	lt.onClosed = append(lt.onClosed, h)
 }
 
-func (lt *lifetime) Close(s *Session) {
+func (lt *lifetime) Close(s Session) {
 	if len(lt.onClosed) < 1 {
 		return
 	}
