@@ -20,7 +20,7 @@ func (h *Handler) Scheduler(n int) {
 		case localMsg := <-h.chanLocalMsg:
 			h.localProcess(localMsg.ctx, localMsg.mid, localMsg.msg)
 		case remoteMsg := <-h.chanRemoteMsg:
-			h.remoteProcess(remoteMsg.ctx, remoteMsg.msg, false)
+			h.remoteProcess(remoteMsg.ctx, remoteMsg.msg)
 		}
 	}
 }
@@ -107,7 +107,7 @@ func (h *Handler) localProcess(ctx context.Context, lastMid uint64, msg *message
 	//}
 }
 
-func (h *Handler) remoteProcess(ctx context.Context, msg *message.Message, noCopy bool) {
+func (h *Handler) remoteProcess(ctx context.Context, msg *message.Message) {
 	log.Println(msg.Route, msg.String(), h.currentNode.ServiceAddr)
 	sess := session.CtxGetSession(ctx)
 	index := strings.LastIndex(msg.Route, ".")
@@ -140,10 +140,6 @@ func (h *Handler) remoteProcess(ctx context.Context, msg *message.Message, noCop
 	}
 
 	var data = msg.Data
-	if !noCopy && len(msg.Data) > 0 {
-		data = make([]byte, len(msg.Data))
-		copy(data, msg.Data)
-	}
 	// Retrieve gate address and session id
 	gateAddr := h.currentNode.ServiceAddr
 	sid := sess.ID()

@@ -89,7 +89,10 @@ func (c *Decoder) Decode(data []byte) ([]*packet.Packet, error) {
 	}
 
 	for c.size <= c.buf.Len() {
-		p := &packet.Packet{Type: packet.Type(c.typ), Length: c.size, Data: c.buf.Next(c.size)}
+		// 目前为并发调度器，所以这里的 DATA 必需Copy
+		cpData := make([]byte, c.size)
+		copy(cpData, c.buf.Next(c.size))
+		p := &packet.Packet{Type: packet.Type(c.typ), Length: c.size, Data: cpData}
 		packets = append(packets, p)
 
 		// more packet

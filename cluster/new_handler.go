@@ -28,7 +28,7 @@ var (
 )
 
 // ctx should bind session
-type rpcHandler func(ctx context.Context, msg *message.Message, noCopy bool)
+type rpcHandler func(ctx context.Context, msg *message.Message)
 
 func cache() {
 	hrdata := map[string]interface{}{

@@ -158,7 +158,7 @@ func (a *agent) RPC(ctx context.Context, route string, v interface{}) error {
 		Data:  data,
 	}
 
-	a.rpcHandler(ctx, msg, true)
+	a.rpcHandler(ctx, msg)
 	return nil
 }
 

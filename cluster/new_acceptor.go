@@ -48,7 +48,7 @@ func (a *acceptor) RPC(ctx context.Context, route string, v interface{}) error {
 		Route: route,
 		Data:  data,
 	}
-	a.rpcHandler(ctx, msg, true)
+	a.rpcHandler(ctx, msg)
 	return nil
 }
 
