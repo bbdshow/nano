@@ -30,7 +30,7 @@ import (
 var (
 	typeOfError   = reflect.TypeOf((*error)(nil)).Elem()
 	typeOfBytes   = reflect.TypeOf(([]byte)(nil))
-	typeOfContext = reflect.TypeOf((*context.Context)(nil)).Elem()
+	typeOfContext = reflect.TypeOf(new(context.Context)).Elem()
 )
 
 func isExported(name string) bool {
@@ -56,7 +56,7 @@ func isHandlerMethod(method reflect.Method) bool {
 	}
 
 	// Method needs three ins: receiver, *Session, []byte or pointer.
-	if mt.NumIn() != 3 {
+	if mt.NumIn() != 2 && mt.NumIn() != 3 {
 		return false
 	}
 
@@ -65,7 +65,7 @@ func isHandlerMethod(method reflect.Method) bool {
 		return false
 	}
 
-	if t1 := mt.In(1); t1.Kind() == reflect.Ptr || t1 != typeOfContext {
+	if t1 := mt.In(1); !t1.Implements(typeOfContext) {
 		return false
 	}
 	//if t1 := mt.In(1); t1.Kind() != reflect.Ptr || t1 != typeOfContext {

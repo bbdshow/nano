@@ -3,15 +3,13 @@ package cluster
 import (
 	"context"
 	"fmt"
-	"strings"
-	"testing"
-
 	"github.com/lonng/nano/benchmark/io"
 	"github.com/lonng/nano/benchmark/testdata"
 	"github.com/lonng/nano/component"
-	"github.com/lonng/nano/scheduler"
 	"github.com/lonng/nano/session"
 	. "github.com/pingcap/check"
+	"strings"
+	"testing"
 )
 
 type nodeSuite struct{}
@@ -36,19 +34,22 @@ func (c *GateComponent) Test(ctx context.Context, ping *testdata.Ping) error {
 
 func (c *GateComponent) Test2(ctx context.Context, ping *testdata.Ping) error {
 	sess := session.CtxGetSession(ctx)
-	sess.Bind("GateComponent.Test2")
 	return sess.Response(ctx, &testdata.Pong{Content: "gate server pong2"})
 }
 
 func (c *GameComponent) Test(ctx context.Context, _ []byte) error {
-	sess := session.CtxGetSession(ctx)
 	fmt.Println("GameComponent.Test")
+	sess := session.CtxGetSession(ctx)
+	//sess.Set("GameComponent", c.Schedule)
+	fmt.Println(sess.ID())
+	//time.Sleep(time.Minute)
 	return sess.Push("test", &testdata.Pong{Content: "game server pong"})
 }
 
 func (c *GameComponent) Test2(ctx context.Context, ping *testdata.Ping) error {
 	sess := session.CtxGetSession(ctx)
-	sess.Bind("GameComponent.Test2")
+	//panic("=========================")
+	fmt.Println("test2", sess.ID())
 	return sess.Response(ctx, &testdata.Pong{Content: "game server pong2"})
 }
 
@@ -57,9 +58,6 @@ func TestNode(t *testing.T) {
 }
 
 func (s *nodeSuite) TestNodeStartup(c *C) {
-	go scheduler.Sched()
-	defer scheduler.Close()
-
 	masterComps := &component.Components{}
 	masterComps.Register(&MasterComponent{})
 	masterNode := &Node{
@@ -93,7 +91,7 @@ func (s *nodeSuite) TestNodeStartup(c *C) {
 	c.Assert(member1Handler.RemoteService(), DeepEquals, []string{"MasterComponent"})
 
 	member2Comps := &component.Components{}
-	member2Comps.Register(&GameComponent{})
+	member2Comps.Register(&GameComponent{}, component.WithSchedulerName("Scheduler"))
 	memberNode2 := &Node{
 		Options: Options{
 			AdvertiseAddr: "127.0.0.1:4450",
@@ -110,6 +108,12 @@ func (s *nodeSuite) TestNodeStartup(c *C) {
 	c.Assert(member1Handler.RemoteService(), DeepEquals, []string{"GameComponent", "MasterComponent"})
 	c.Assert(member2Handler.LocalService(), DeepEquals, []string{"GameComponent"})
 	c.Assert(member2Handler.RemoteService(), DeepEquals, []string{"GateComponent", "MasterComponent"})
+
+	// 启动调度器
+	go masterNode.Handler().Scheduler(0)
+	go memberNode1.Handler().Scheduler(0)
+	go memberNode2.Handler().Scheduler(0)
+
 	//fmt.Println("====")
 	connector := io.NewConnector()
 

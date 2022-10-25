@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"github.com/lonng/nano/internal/log"
-	"github.com/lonng/nano/service"
 	"net"
 	"sync"
 	"time"
@@ -64,7 +63,7 @@ type Session interface {
 // a NetworkEntity is a low-level network instance
 func NewSession(entity NetworkEntity) Session {
 	s := &sessionImpl{
-		id:       service.Connections.SessionID(),
+		id:       UniqueSessionId(),
 		entity:   entity,
 		data:     make(map[string]interface{}),
 		lastTime: time.Now().Unix(),

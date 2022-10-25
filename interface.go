@@ -22,6 +22,7 @@ package nano
 
 import (
 	"fmt"
+	"github.com/lonng/nano/timer"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -35,7 +36,6 @@ import (
 	"github.com/lonng/nano/internal/env"
 	"github.com/lonng/nano/internal/log"
 	"github.com/lonng/nano/internal/runtime"
-	"github.com/lonng/nano/scheduler"
 )
 
 var running int32
@@ -89,6 +89,10 @@ func Listen(addr string, opts ...Option) {
 		opt.RetryInterval = time.Second * 3
 	}
 
+	if opt.ConcurrentScheduler <= 0 {
+		opt.ConcurrentScheduler = 1
+	}
+
 	node := &cluster.Node{
 		Options:     opt,
 		ServiceAddr: addr,
@@ -107,7 +111,13 @@ func Listen(addr string, opts ...Option) {
 			app.name, node.ServiceAddr))
 	}
 
-	go scheduler.Sched()
+	// 并发调度器
+	for i := 0; i < opt.ConcurrentScheduler; i++ {
+		go node.Handler().Scheduler(i)
+	}
+
+	// 开启全局定时器
+	timer.Run()
 	sg := make(chan os.Signal)
 	signal.Notify(sg, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGKILL, syscall.SIGTERM)
 
@@ -122,7 +132,7 @@ func Listen(addr string, opts ...Option) {
 
 	node.Shutdown()
 	runtime.CurrentNode = nil
-	scheduler.Close()
+	timer.Close()
 	atomic.StoreInt32(&running, 0)
 }
 

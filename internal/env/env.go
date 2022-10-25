@@ -40,7 +40,7 @@ var (
 	WSPath             string                   // WebSocket path(eg: ws://127.0.0.1/WSPath)
 	HandshakeValidator func([]byte) error       // When you need to verify the custom data of the handshake request
 
-	// timerPrecision indicates the precision of timer, default is time.Second
+	// TimerPrecision indicates the precision of timer, default is time.Second
 	TimerPrecision = time.Second
 
 	// globalTicker represents global ticker that all cron job will be executed

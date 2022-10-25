@@ -33,7 +33,7 @@ func WithAdvertiseAddr(addr string, retryInterval ...time.Duration) Option {
 	}
 }
 
-// WithMemberAddr sets the listen address which is used to establish connection between
+// WithClientAddr sets the listen address which is used to establish connection between
 // cluster members. Will select an available port automatically if no member address
 // setting and panic if no available port
 func WithClientAddr(addr string) Option {
@@ -84,7 +84,7 @@ func WithDebugMode() Option {
 	}
 }
 
-// SetDictionary sets routes map
+// WithDictionary sets routes map
 func WithDictionary(dict map[string]uint16) Option {
 	return func(_ *cluster.Options) {
 		message.SetDictionary(dict)
@@ -97,7 +97,7 @@ func WithWSPath(path string) Option {
 	}
 }
 
-// SetTimerPrecision sets the ticker precision, and time precision can not less
+// WithTimerPrecision sets the ticker precision, and time precision can not less
 // than a Millisecond, and can not change after application running. The default
 // precision is time.Second
 func WithTimerPrecision(precision time.Duration) Option {
@@ -150,5 +150,14 @@ func WithLogger(l log.Logger) Option {
 func WithHandshakeValidator(fn func([]byte) error) Option {
 	return func(opt *cluster.Options) {
 		env.HandshakeValidator = fn
+	}
+}
+
+func WithConcurrentScheduler(n int) Option {
+	return func(opt *cluster.Options) {
+		if n <= 0 {
+			n = 1
+		}
+		opt.ConcurrentScheduler = n
 	}
 }

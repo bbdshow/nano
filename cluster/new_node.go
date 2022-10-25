@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/lonng/nano/cluster/clusterpb"
-	"math/rand"
+	"github.com/lonng/nano/timer"
 	"net"
 	"net/http"
 	"strings"
@@ -18,23 +18,23 @@ import (
 	"github.com/lonng/nano/internal/log"
 	"github.com/lonng/nano/internal/message"
 	"github.com/lonng/nano/pipeline"
-	"github.com/lonng/nano/scheduler"
 	"github.com/lonng/nano/session"
 	"google.golang.org/grpc"
 )
 
 // Options contains some configurations for current node
 type Options struct {
-	Pipeline       pipeline.Pipeline
-	IsMaster       bool
-	AdvertiseAddr  string
-	RetryInterval  time.Duration
-	ClientAddr     string
-	Components     *component.Components
-	Label          string
-	IsWebsocket    bool
-	TSLCertificate string
-	TSLKey         string
+	Pipeline            pipeline.Pipeline
+	IsMaster            bool
+	AdvertiseAddr       string
+	RetryInterval       time.Duration
+	ClientAddr          string
+	Components          *component.Components
+	Label               string
+	IsWebsocket         bool
+	TSLCertificate      string
+	TSLKey              string
+	ConcurrentScheduler int // 并发调度器
 }
 
 // Node represents a node in nano cluster, which will contains a group of services.
@@ -45,19 +45,19 @@ type Node struct {
 	ServiceAddr string // current server service address (RPC)
 
 	cluster   *cluster
-	handler   *LocalHandler
+	handler   *Handler
 	server    *grpc.Server
 	rpcClient *rpcClient
 
 	mu       sync.RWMutex
-	sessions map[string]session.Session
+	sessions map[int64]session.Session
 }
 
 func (n *Node) Startup() error {
 	if n.ServiceAddr == "" {
 		return errors.New("service address cannot be empty in master node")
 	}
-	n.sessions = map[string]session.Session{}
+	n.sessions = map[int64]session.Session{}
 	n.cluster = newCluster(n)
 	n.handler = NewHandler(n, n.Pipeline)
 	components := n.Components.List()
@@ -98,7 +98,7 @@ func (n *Node) Startup() error {
 	return nil
 }
 
-func (n *Node) Handler() *LocalHandler {
+func (n *Node) Handler() *Handler {
 	return n.handler
 }
 
@@ -167,7 +167,7 @@ func (n *Node) initNode() error {
 	return nil
 }
 
-// Shutdowns all components registered by application, that
+// Shutdown all components registered by application, that
 // call by reverse order against register
 func (n *Node) Shutdown() {
 	// reverse call `BeforeShutdown` hooks
@@ -270,55 +270,50 @@ func (n *Node) listenAndServeWSTLS() {
 
 func (n *Node) storeSession(s session.Session) {
 	n.mu.Lock()
-	n.sessions[s.UID()] = s
+	n.sessions[s.ID()] = s
 	n.mu.Unlock()
 }
 
-func (n *Node) findSession(uid string) session.Session {
+func (n *Node) findSession(sid int64) session.Session {
 	n.mu.RLock()
-	s := n.sessions[uid]
+	s := n.sessions[sid]
 	n.mu.RUnlock()
 	return s
 }
 
-func (n *Node) findOrCreateSession(uid string, gateAddr string) (session.Session, error) {
-	if uid == "" {
-		// rand string
-		uid = fmt.Sprintf("%d", rand.Intn(10000))
-	}
+func (n *Node) findOrCreateSession(sid int64, gateAddr string) (session.Session, error) {
 	n.mu.RLock()
-	s, found := n.sessions[uid]
+	s, found := n.sessions[sid]
 	n.mu.RUnlock()
 	if !found {
+		log.Println(sid, gateAddr, n.ServiceAddr)
 		conns, err := n.rpcClient.getConnPool(gateAddr)
 		if err != nil {
 			return nil, err
 		}
 		ac := &acceptor{
-			gateClient: clusterpb.NewMemberClient(conns.Get()),
-			rpcHandler: n.handler.remoteProcess,
-			gateAddr:   gateAddr,
+			lastSessionId: sid,
+			gateClient:    clusterpb.NewMemberClient(conns.Get()),
+			rpcHandler:    n.handler.remoteProcess,
+			gateAddr:      gateAddr,
 		}
 		s = session.NewSession(ac)
 
-		if err := s.Bind(uid); err != nil {
-			return nil, err
-		}
 		ac.session = s
 
 		n.mu.Lock()
-		n.sessions[uid] = s
+		n.sessions[sid] = s
 		n.mu.Unlock()
 	}
 	return s, nil
 }
 
 func (n *Node) HandleRequest(ctx context.Context, req *clusterpb.RequestMessage) (*clusterpb.MemberHandleResponse, error) {
-	handler, found := n.handler.localHandlers[req.Route]
+	found := n.handler.IsLocalHandler(req.Route)
 	if !found {
 		return nil, fmt.Errorf("service not found in current node: %v", req.Route)
 	}
-	s, err := n.findOrCreateSession(req.SessionUid, req.GateAddr)
+	s, err := n.findOrCreateSession(req.SessionId, req.GateAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -329,45 +324,59 @@ func (n *Node) HandleRequest(ctx context.Context, req *clusterpb.RequestMessage)
 		Data:  req.Data,
 	}
 
-	ctx = session.CtxSetSession(ctx, s)
-	n.handler.localProcess(ctx, handler, req.Id, msg)
+	ctx = session.CtxSetSession(context.Background(), s)
 
+	uMsg := unhandledMessage{
+		ctx: ctx,
+		msg: msg,
+		mid: req.Id,
+	}
+	n.handler.chanLocalMsg <- uMsg
 	return &clusterpb.MemberHandleResponse{}, nil
 }
 
 func (n *Node) HandleNotify(ctx context.Context, req *clusterpb.NotifyMessage) (*clusterpb.MemberHandleResponse, error) {
-	handler, found := n.handler.localHandlers[req.Route]
+	log.Println("HandleNotify", req.Route, req.SessionId, req.GateAddr, n.ServiceAddr, string(req.Data))
+	found := n.handler.IsLocalHandler(req.Route)
 	if !found {
 		return nil, fmt.Errorf("service not found in current node: %v", req.Route)
 	}
-	s, err := n.findOrCreateSession(req.SessionUid, req.GateAddr)
+	s, err := n.findOrCreateSession(req.SessionId, req.GateAddr)
 	if err != nil {
 		return nil, err
 	}
+	log.Println("===========", s.ID(), "accpert", req.Route)
 	msg := &message.Message{
 		Type:  message.Notify,
 		Route: req.Route,
 		Data:  req.Data,
 	}
-	ctx = session.CtxSetSession(ctx, s)
-	n.handler.localProcess(ctx, handler, 0, msg)
+	ctx = session.CtxSetSession(context.Background(), s)
+
+	uMsg := unhandledMessage{
+		ctx: ctx,
+		msg: msg,
+		mid: 0,
+	}
+	n.handler.chanLocalMsg <- uMsg
 
 	return &clusterpb.MemberHandleResponse{}, nil
 }
 
 func (n *Node) HandlePush(ctx context.Context, req *clusterpb.PushMessage) (*clusterpb.MemberHandleResponse, error) {
-	s := n.findSession(req.SessionUid)
+	log.Println(n.ServiceAddr)
+	s := n.findSession(req.SessionId)
 	if s == nil {
-		return &clusterpb.MemberHandleResponse{}, fmt.Errorf("session not found: %v", req.SessionUid)
+		return &clusterpb.MemberHandleResponse{}, fmt.Errorf("HandlePush session not found: %v", req.SessionId)
 	}
 
 	return &clusterpb.MemberHandleResponse{}, s.Push(req.Route, req.Data)
 }
 
 func (n *Node) HandleResponse(ctx context.Context, req *clusterpb.ResponseMessage) (*clusterpb.MemberHandleResponse, error) {
-	s := n.findSession(req.SessionUid)
+	s := n.findSession(req.SessionId)
 	if s == nil {
-		return &clusterpb.MemberHandleResponse{}, fmt.Errorf("session not found: %v", req.SessionUid)
+		return &clusterpb.MemberHandleResponse{}, fmt.Errorf("HandleResponse session not found: %v", req.SessionId)
 	}
 	return &clusterpb.MemberHandleResponse{}, s.ResponseMID(ctx, req.Id, req.Data)
 }
@@ -387,11 +396,13 @@ func (n *Node) DelMember(_ context.Context, req *clusterpb.DelMemberRequest) (*c
 // SessionClosed implements the MemberServer interface
 func (n *Node) SessionClosed(_ context.Context, req *clusterpb.SessionClosedRequest) (*clusterpb.SessionClosedResponse, error) {
 	n.mu.Lock()
-	s, found := n.sessions[req.SessionUid]
-	delete(n.sessions, req.SessionUid)
+	s, found := n.sessions[req.SessionId]
+	delete(n.sessions, req.SessionId)
 	n.mu.Unlock()
 	if found {
-		scheduler.PushTask(func() { session.Lifetime.Close(s) })
+		timer.NewAfterTimer(100*time.Millisecond, func() {
+			session.Lifetime.Close(s)
+		})
 	}
 	return &clusterpb.SessionClosedResponse{}, nil
 }
@@ -399,8 +410,8 @@ func (n *Node) SessionClosed(_ context.Context, req *clusterpb.SessionClosedRequ
 // CloseSession implements the MemberServer interface
 func (n *Node) CloseSession(_ context.Context, req *clusterpb.CloseSessionRequest) (*clusterpb.CloseSessionResponse, error) {
 	n.mu.Lock()
-	s, found := n.sessions[req.SessionUid]
-	delete(n.sessions, req.SessionUid)
+	s, found := n.sessions[req.SessionId]
+	delete(n.sessions, req.SessionId)
 	n.mu.Unlock()
 	if found {
 		s.Close()

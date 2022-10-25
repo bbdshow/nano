@@ -4,16 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/websocket"
 	"github.com/lonng/nano/cluster/clusterpb"
-	"math/rand"
 	"net"
-	"reflect"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/lonng/nano/component"
 	"github.com/lonng/nano/internal/codec"
 	"github.com/lonng/nano/internal/env"
@@ -21,7 +18,6 @@ import (
 	"github.com/lonng/nano/internal/message"
 	"github.com/lonng/nano/internal/packet"
 	"github.com/lonng/nano/pipeline"
-	"github.com/lonng/nano/scheduler"
 	"github.com/lonng/nano/session"
 )
 
@@ -32,7 +28,7 @@ var (
 )
 
 // ctx should bind session
-type rpcHandler func(ctx context.Context, msg *message.Message, noCopy bool)
+type rpcHandler func(ctx context.Context, msg *message.Message)
 
 func cache() {
 	hrdata := map[string]interface{}{
@@ -74,30 +70,45 @@ func cache() {
 	}
 }
 
-type LocalHandler struct {
+type unhandledMessage struct {
+	ctx context.Context
+	msg *message.Message
+	mid uint64
+}
+
+type Handler struct {
 	localServices map[string]*component.Service // all registered service
 	localHandlers map[string]*component.Handler // all handler method
 
 	mu             sync.RWMutex
 	remoteServices map[string][]*clusterpb.MemberInfo
 
+	chanLocalMsg  chan unhandledMessage
+	chanRemoteMsg chan unhandledMessage
+
 	pipeline    pipeline.Pipeline
 	currentNode *Node
+
+	chExit chan struct{}
 }
 
-func NewHandler(currentNode *Node, pipeline pipeline.Pipeline) *LocalHandler {
-	h := &LocalHandler{
+func NewHandler(currentNode *Node, pipeline pipeline.Pipeline) *Handler {
+	h := &Handler{
 		localServices:  make(map[string]*component.Service),
 		localHandlers:  make(map[string]*component.Handler),
 		remoteServices: map[string][]*clusterpb.MemberInfo{},
-		pipeline:       pipeline,
-		currentNode:    currentNode,
+
+		chanLocalMsg:  make(chan unhandledMessage, 1<<7),
+		chanRemoteMsg: make(chan unhandledMessage, 1<<7),
+
+		pipeline:    pipeline,
+		currentNode: currentNode,
 	}
 
 	return h
 }
 
-func (h *LocalHandler) register(comp component.Component, opts []component.Option) error {
+func (h *Handler) register(comp component.Component, opts []component.Option) error {
 	s := component.NewService(comp, opts)
 
 	if _, ok := h.localServices[s.Name]; ok {
@@ -118,13 +129,13 @@ func (h *LocalHandler) register(comp component.Component, opts []component.Optio
 	return nil
 }
 
-func (h *LocalHandler) initRemoteService(members []*clusterpb.MemberInfo) {
+func (h *Handler) initRemoteService(members []*clusterpb.MemberInfo) {
 	for _, m := range members {
 		h.addRemoteService(m)
 	}
 }
 
-func (h *LocalHandler) addRemoteService(member *clusterpb.MemberInfo) {
+func (h *Handler) addRemoteService(member *clusterpb.MemberInfo) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -134,7 +145,13 @@ func (h *LocalHandler) addRemoteService(member *clusterpb.MemberInfo) {
 	}
 }
 
-func (h *LocalHandler) delMember(addr string) {
+func (h *Handler) findRemoteMembers(service string) []*clusterpb.MemberInfo {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.remoteServices[service]
+}
+
+func (h *Handler) delMember(addr string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -156,7 +173,7 @@ func (h *LocalHandler) delMember(addr string) {
 	}
 }
 
-func (h *LocalHandler) LocalService() []string {
+func (h *Handler) LocalService() []string {
 	var result []string
 	for service := range h.localServices {
 		result = append(result, service)
@@ -165,7 +182,7 @@ func (h *LocalHandler) LocalService() []string {
 	return result
 }
 
-func (h *LocalHandler) RemoteService() []string {
+func (h *Handler) RemoteService() []string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -177,8 +194,13 @@ func (h *LocalHandler) RemoteService() []string {
 	return result
 }
 
-func (h *LocalHandler) handle(conn net.Conn) {
-	// create a client agent and startup write gorontine
+func (h *Handler) IsLocalHandler(route string) bool {
+	_, ok := h.localHandlers[route]
+	return ok
+}
+
+func (h *Handler) handle(conn net.Conn) {
+	// create a client agent and startup write goroutine
 	agent := newAgent(conn, h.pipeline, h.remoteProcess)
 	h.currentNode.storeSession(agent.session)
 
@@ -192,7 +214,7 @@ func (h *LocalHandler) handle(conn net.Conn) {
 	// guarantee agent related resource be destroyed
 	defer func() {
 		request := &clusterpb.SessionClosedRequest{
-			SessionUid: agent.session.UID(),
+			SessionId: agent.session.ID(),
 		}
 
 		members := h.currentNode.cluster.remoteAddrs()
@@ -254,7 +276,16 @@ func (h *LocalHandler) handle(conn net.Conn) {
 	}
 }
 
-func (h *LocalHandler) processPacket(agent *agent, p *packet.Packet) error {
+func (h *Handler) handleWS(conn *websocket.Conn) {
+	c, err := newWSConn(conn)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	go h.handle(c)
+}
+
+func (h *Handler) processPacket(agent *agent, p *packet.Packet) error {
 	switch p.Type {
 	case packet.Handshake:
 		if err := env.HandshakeValidator(p.Data); err != nil {
@@ -296,85 +327,7 @@ func (h *LocalHandler) processPacket(agent *agent, p *packet.Packet) error {
 	return nil
 }
 
-func (h *LocalHandler) findMembers(service string) []*clusterpb.MemberInfo {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.remoteServices[service]
-}
-
-func (h *LocalHandler) remoteProcess(ctx context.Context, msg *message.Message, noCopy bool) {
-	sess := session.CtxGetSession(ctx)
-	if sess == nil {
-		return
-	}
-	index := strings.LastIndex(msg.Route, ".")
-	if index < 0 {
-		log.Println(fmt.Sprintf("nano/handler: invalid route %s", msg.Route))
-		return
-	}
-
-	service := msg.Route[:index]
-	members := h.findMembers(service)
-	if len(members) == 0 {
-		log.Println(fmt.Sprintf("nano/handler: %s not found(forgot registered?)", msg.Route))
-		return
-	}
-
-	// Select a remote service address
-	// 1. Use the service address directly if the router contains binding item
-	// 2. Select a remote service address randomly and bind to router
-	var remoteAddr string
-	if addr, found := sess.Router().Find(service); found {
-		remoteAddr = addr
-	} else {
-		remoteAddr = members[rand.Intn(len(members))].ServiceAddr
-		sess.Router().Bind(service, remoteAddr)
-	}
-	pool, err := h.currentNode.rpcClient.getConnPool(remoteAddr)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	var data = msg.Data
-	if !noCopy && len(msg.Data) > 0 {
-		data = make([]byte, len(msg.Data))
-		copy(data, msg.Data)
-	}
-
-	// Retrieve gate address and session id
-	gateAddr := h.currentNode.ServiceAddr
-	sessionUid := sess.UID()
-	switch v := sess.NetworkEntity().(type) {
-	case *acceptor:
-		gateAddr = v.gateAddr
-	}
-
-	client := clusterpb.NewMemberClient(pool.Get())
-	switch msg.Type {
-	case message.Request:
-		request := &clusterpb.RequestMessage{
-			GateAddr:   gateAddr,
-			SessionUid: sessionUid,
-			Id:         msg.ID,
-			Route:      msg.Route,
-			Data:       data,
-		}
-		_, err = client.HandleRequest(ctx, request)
-	case message.Notify:
-		request := &clusterpb.NotifyMessage{
-			GateAddr:   gateAddr,
-			SessionUid: sessionUid,
-			Route:      msg.Route,
-			Data:       data,
-		}
-		_, err = client.HandleNotify(ctx, request)
-	}
-	if err != nil {
-		log.Println(fmt.Sprintf("Process remote message (%d:%s) error: %+v", msg.ID, msg.Route, err))
-	}
-}
-
-func (h *LocalHandler) processMessage(agent *agent, msg *message.Message) {
+func (h *Handler) processMessage(agent *agent, msg *message.Message) {
 	var lastMid uint64
 	switch msg.Type {
 	case message.Request:
@@ -387,94 +340,16 @@ func (h *LocalHandler) processMessage(agent *agent, msg *message.Message) {
 	}
 
 	ctx := session.CtxSetSession(context.Background(), agent.session)
-	handler, found := h.localHandlers[msg.Route]
+
+	uMsg := unhandledMessage{
+		ctx: ctx,
+		msg: msg,
+		mid: lastMid,
+	}
+	_, found := h.localHandlers[msg.Route]
 	if !found {
-		h.remoteProcess(ctx, msg, false)
+		h.chanRemoteMsg <- uMsg
 	} else {
-		h.localProcess(ctx, handler, lastMid, msg)
-	}
-}
-
-func (h *LocalHandler) handleWS(conn *websocket.Conn) {
-	c, err := newWSConn(conn)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	go h.handle(c)
-}
-
-func (h *LocalHandler) localProcess(ctx context.Context, handler *component.Handler, lastMid uint64, msg *message.Message) {
-	sess := session.CtxGetSession(ctx)
-	if sess == nil {
-		return
-	}
-
-	if pipe := h.pipeline; pipe != nil {
-		err := pipe.Inbound().Process(sess, msg)
-		if err != nil {
-			log.Println("Pipeline process failed: " + err.Error())
-			return
-		}
-	}
-
-	var payload = msg.Data
-	var data interface{}
-	if handler.IsRawArg {
-		data = payload
-	} else {
-		data = reflect.New(handler.Type.Elem()).Interface()
-		err := env.Serializer.Unmarshal(payload, data)
-		if err != nil {
-			log.Println(fmt.Sprintf("Deserialize to %T failed: %+v (%v)", data, err, payload))
-			return
-		}
-	}
-
-	if env.Debug {
-		log.Println(fmt.Sprintf("UID=%s, Message={%s}, Data=%+v", sess.UID(), msg.String(), data))
-	}
-
-	args := []reflect.Value{handler.Receiver, reflect.ValueOf(ctx), reflect.ValueOf(data)}
-	task := func() {
-		switch v := sess.NetworkEntity().(type) {
-		case *agent:
-			v.lastMid = lastMid
-		case *acceptor:
-			v.lastMid = lastMid
-		}
-
-		result := handler.Method.Func.Call(args)
-		if len(result) > 0 {
-			if err := result[0].Interface(); err != nil {
-				log.Println(fmt.Sprintf("Service %s error: %+v", msg.Route, err))
-			}
-		}
-	}
-
-	index := strings.LastIndex(msg.Route, ".")
-	if index < 0 {
-		log.Println(fmt.Sprintf("nano/handler: invalid route %s", msg.Route))
-		return
-	}
-
-	// A message can be dispatch to global thread or a user customized thread
-	service := msg.Route[:index]
-	if s, found := h.localServices[service]; found && s.SchedName != "" {
-		sched := sess.Value(s.SchedName)
-		if sched == nil {
-			log.Println(fmt.Sprintf("nanl/handler: cannot found `schedular.LocalScheduler` by %s", s.SchedName))
-			return
-		}
-
-		local, ok := sched.(scheduler.LocalScheduler)
-		if !ok {
-			log.Println(fmt.Sprintf("nanl/handler: Type %T does not implement the `schedular.LocalScheduler` interface",
-				sched))
-			return
-		}
-		local.Schedule(task)
-	} else {
-		scheduler.PushTask(task)
+		h.chanLocalMsg <- uMsg
 	}
 }
