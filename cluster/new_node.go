@@ -336,7 +336,7 @@ func (n *Node) HandleRequest(ctx context.Context, req *clusterpb.RequestMessage)
 }
 
 func (n *Node) HandleNotify(ctx context.Context, req *clusterpb.NotifyMessage) (*clusterpb.MemberHandleResponse, error) {
-	log.Println("HandleNotify", req.Route, req.SessionId, req.GateAddr, n.ServiceAddr, string(req.Data))
+	//log.Println("HandleNotify", req.Route, req.SessionId, req.GateAddr, n.ServiceAddr, string(req.Data))
 	found := n.handler.IsLocalHandler(req.Route)
 	if !found {
 		return nil, fmt.Errorf("service not found in current node: %v", req.Route)
@@ -345,7 +345,7 @@ func (n *Node) HandleNotify(ctx context.Context, req *clusterpb.NotifyMessage) (
 	if err != nil {
 		return nil, err
 	}
-	log.Println("===========", s.ID(), "accpert", req.Route)
+
 	msg := &message.Message{
 		Type:  message.Notify,
 		Route: req.Route,
@@ -364,7 +364,6 @@ func (n *Node) HandleNotify(ctx context.Context, req *clusterpb.NotifyMessage) (
 }
 
 func (n *Node) HandlePush(ctx context.Context, req *clusterpb.PushMessage) (*clusterpb.MemberHandleResponse, error) {
-	log.Println(n.ServiceAddr)
 	s := n.findSession(req.SessionId)
 	if s == nil {
 		return &clusterpb.MemberHandleResponse{}, fmt.Errorf("HandlePush session not found: %v", req.SessionId)

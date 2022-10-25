@@ -23,8 +23,6 @@ package codec
 import (
 	"bytes"
 	"errors"
-	"log"
-
 	"github.com/lonng/nano/internal/packet"
 )
 
@@ -105,7 +103,6 @@ func (c *Decoder) Decode(data []byte) ([]*packet.Packet, error) {
 			return packets, err
 		}
 	}
-	log.Println("buff cap ===============", c.buf.Cap())
 	return packets, nil
 }
 

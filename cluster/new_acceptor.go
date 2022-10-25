@@ -3,7 +3,6 @@ package cluster
 import (
 	"context"
 	"github.com/lonng/nano/cluster/clusterpb"
-	"github.com/lonng/nano/internal/log"
 	"github.com/lonng/nano/internal/message"
 	"github.com/lonng/nano/mock"
 	"github.com/lonng/nano/session"
@@ -21,7 +20,6 @@ type acceptor struct {
 
 // Push implements the session.NetworkEntity interface
 func (a *acceptor) Push(route string, v interface{}) error {
-	log.Println("acceptor.Push.route", a.gateAddr, route, v)
 	// TODO: buffer
 	data, err := message.Serialize(v)
 	if err != nil {

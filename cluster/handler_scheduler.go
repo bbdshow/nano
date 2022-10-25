@@ -108,7 +108,7 @@ func (h *Handler) localProcess(ctx context.Context, lastMid uint64, msg *message
 }
 
 func (h *Handler) remoteProcess(ctx context.Context, msg *message.Message) {
-	log.Println(msg.Route, msg.String(), h.currentNode.ServiceAddr)
+	//log.Println(msg.Route, msg.String(), h.currentNode.ServiceAddr)
 	sess := session.CtxGetSession(ctx)
 	index := strings.LastIndex(msg.Route, ".")
 	if index < 0 {
@@ -148,7 +148,6 @@ func (h *Handler) remoteProcess(ctx context.Context, msg *message.Message) {
 		gateAddr = v.gateAddr
 		sid = v.lastSessionId
 	}
-	log.Println("remoteAddr", remoteAddr, gateAddr, "ctx", &ctx)
 
 	client := clusterpb.NewMemberClient(pool.Get())
 	switch msg.Type {
@@ -160,8 +159,6 @@ func (h *Handler) remoteProcess(ctx context.Context, msg *message.Message) {
 			Route:     msg.Route,
 			Data:      data,
 		}
-		deadline, ok := ctx.Deadline()
-		log.Println("Request", remoteAddr, gateAddr, request, deadline.String(), ok, ctx.Err())
 		_, err = client.HandleRequest(ctx, request)
 	case message.Notify:
 		request := &clusterpb.NotifyMessage{
@@ -170,7 +167,7 @@ func (h *Handler) remoteProcess(ctx context.Context, msg *message.Message) {
 			Route:     msg.Route,
 			Data:      data,
 		}
-		log.Println("remoteAddr", remoteAddr, gateAddr, request)
+		//log.Println("remoteAddr", remoteAddr, gateAddr, request)
 		_, err = client.HandleNotify(ctx, request)
 	}
 	if err != nil {
