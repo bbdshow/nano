@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -92,4 +93,8 @@ func BenchmarkDecoder_Decode(b *testing.B) {
 			b.Fatal("decode error")
 		}
 	}
+}
+
+func TestIntToByte(t *testing.T) {
+	fmt.Println(intToBytes(524 * 1024))
 }

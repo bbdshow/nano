@@ -1,6 +1,8 @@
 package logic
 
 import (
+	"context"
+	"fmt"
 	"log"
 
 	"github.com/lonng/nano/component"
@@ -19,11 +21,12 @@ func NewManager() *Manager {
 }
 
 // Login handler was used to guest login
-func (m *Manager) Login(s *session.Session, msg *protocol.JoyLoginRequest) error {
+func (m *Manager) Login(ctx context.Context, msg *protocol.JoyLoginRequest) error {
+	s := session.CtxGetSession(ctx)
 	log.Println(msg)
 	id := s.ID()
-	s.Bind(id)
-	return s.Response(protocol.LoginResponse{
+	s.Bind(fmt.Sprintf("%d", id))
+	return s.Response(ctx, protocol.LoginResponse{
 		Status: protocol.LoginStatusSucc,
 		ID:     id,
 	})

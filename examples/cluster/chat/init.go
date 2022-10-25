@@ -16,6 +16,6 @@ func init() {
 	Services.Register(roomService)
 }
 
-func OnSessionClosed(s *session.Session) {
+func OnSessionClosed(s session.Session) {
 	roomService.userDisconnected(s)
 }

@@ -1,7 +1,10 @@
 package master
 
 import (
+	"context"
+	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/lonng/nano/component"
@@ -11,7 +14,7 @@ import (
 )
 
 type User struct {
-	session  *session.Session
+	session  session.Session
 	nickname string
 	gateId   int64
 	masterId int64
@@ -35,10 +38,11 @@ type ExistsMembersResponse struct {
 	Members string `json:"members"`
 }
 
-func (ts *TopicService) NewUser(s *session.Session, msg *protocol.NewUserRequest) error {
+func (ts *TopicService) NewUser(ctx context.Context, msg *protocol.NewUserRequest) error {
+	s := session.CtxGetSession(ctx)
 	ts.nextUid++
 	uid := ts.nextUid
-	if err := s.Bind(uid); err != nil {
+	if err := s.Bind(fmt.Sprintf("%d", s)); err != nil {
 		return errors.Trace(err)
 	}
 
@@ -65,14 +69,15 @@ func (ts *TopicService) NewUser(s *session.Session, msg *protocol.NewUserRequest
 		GateUid:   msg.GateUid,
 		MasterUid: uid,
 	}
-	return s.RPC("RoomService.JoinRoom", chat)
+	return s.RPC(ctx, "RoomService.JoinRoom", chat)
 }
 
 type UserBalanceResponse struct {
 	CurrentBalance int64 `json:"currentBalance"`
 }
 
-func (ts *TopicService) Stats(s *session.Session, msg *protocol.MasterStats) error {
+func (ts *TopicService) Stats(ctx context.Context, msg *protocol.MasterStats) error {
+	s := session.CtxGetSession(ctx)
 	// It's OK to use map without lock because of this service running in main thread
 	user, found := ts.users[msg.Uid]
 	if !found {
@@ -83,8 +88,8 @@ func (ts *TopicService) Stats(s *session.Session, msg *protocol.MasterStats) err
 	return s.Push("onBalance", &UserBalanceResponse{user.balance})
 }
 
-func (ts *TopicService) userDisconnected(s *session.Session) {
-	uid := s.UID()
+func (ts *TopicService) userDisconnected(s session.Session) {
+	uid, _ := strconv.ParseInt(s.UID(), 10, 64)
 	delete(ts.users, uid)
 	log.Println("User session disconnected", s.UID())
 }

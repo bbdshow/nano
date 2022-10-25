@@ -1,5 +1,10 @@
 package session
 
+import (
+	"log"
+	"runtime/debug"
+)
+
 type (
 	// LifetimeHandler represents a callback
 	// that will be called when a session close or
@@ -24,7 +29,11 @@ func (lt *lifetime) Close(s Session) {
 	if len(lt.onClosed) < 1 {
 		return
 	}
-
+	defer func() {
+		if err := recover(); err != nil {
+			log.Println("Lifetime close handler", err, debug.Stack())
+		}
+	}()
 	for _, h := range lt.onClosed {
 		h(s)
 	}

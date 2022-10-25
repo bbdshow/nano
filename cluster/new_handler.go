@@ -28,7 +28,7 @@ var (
 )
 
 // ctx should bind session
-type rpcHandler func(ctx context.Context, msg *message.Message)
+type rpcHandler func(ctx context.Context, msg *message.Message, noCopy bool)
 
 func cache() {
 	hrdata := map[string]interface{}{
@@ -254,8 +254,6 @@ func (h *Handler) handle(conn net.Conn) {
 		// TODO(warning): decoder use slice for performance, packet data should be copy before next Decode
 		packets, err := agent.decoder.Decode(buf[:n])
 		if err != nil {
-			log.Println(err.Error())
-
 			// process packets decoded
 			for _, p := range packets {
 				if err := h.processPacket(agent, p); err != nil {

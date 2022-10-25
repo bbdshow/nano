@@ -35,7 +35,6 @@ import (
 	"github.com/lonng/nano/internal/message"
 	"github.com/lonng/nano/internal/packet"
 	"github.com/lonng/nano/pipeline"
-	"github.com/lonng/nano/scheduler"
 	"github.com/lonng/nano/session"
 )
 
@@ -159,7 +158,7 @@ func (a *agent) RPC(ctx context.Context, route string, v interface{}) error {
 		Data:  data,
 	}
 
-	a.rpcHandler(ctx, msg)
+	a.rpcHandler(ctx, msg, true)
 	return nil
 }
 
@@ -217,7 +216,7 @@ func (a *agent) Close() error {
 		// expect
 	default:
 		close(a.chDie)
-		scheduler.PushTask(func() { session.Lifetime.Close(a.session) })
+		session.Lifetime.Close(a.session)
 	}
 
 	return a.conn.Close()

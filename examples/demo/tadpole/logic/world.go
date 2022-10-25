@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"context"
 	"fmt"
 	"log"
 
@@ -26,7 +27,7 @@ func NewWorld() *World {
 
 // Init initialize world component
 func (w *World) Init() {
-	session.Lifetime.OnClosed(func(s *session.Session) {
+	session.Lifetime.OnClosed(func(s session.Session) {
 		w.Leave(s)
 		w.Broadcast("leave", &protocol.LeaveWorldResponse{ID: s.ID()})
 		log.Println(fmt.Sprintf("session count: %d", w.Count()))
@@ -34,19 +35,21 @@ func (w *World) Init() {
 }
 
 // Enter was called when new guest enter
-func (w *World) Enter(s *session.Session, msg []byte) error {
+func (w *World) Enter(ctx context.Context, msg []byte) error {
+	s := session.CtxGetSession(ctx)
 	w.Add(s)
 	log.Println(fmt.Sprintf("session count: %d", w.Count()))
-	return s.Response(&protocol.EnterWorldResponse{ID: s.ID()})
+	return s.Response(ctx, &protocol.EnterWorldResponse{ID: s.ID()})
 }
 
 // Update refresh tadpole's position
-func (w *World) Update(s *session.Session, msg []byte) error {
+func (w *World) Update(ctx context.Context, msg []byte) error {
 	return w.Broadcast("update", msg)
 }
 
 // Message handler was used to communicate with each other
-func (w *World) Message(s *session.Session, msg *protocol.WorldMessage) error {
+func (w *World) Message(ctx context.Context, msg *protocol.WorldMessage) error {
+	s := session.CtxGetSession(ctx)
 	msg.ID = s.ID()
 	return w.Broadcast("message", msg)
 }

@@ -1,8 +1,10 @@
 package chat
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"strconv"
 
 	"github.com/lonng/nano"
 	"github.com/lonng/nano/component"
@@ -22,8 +24,9 @@ func newRoomService() *RoomService {
 	}
 }
 
-func (rs *RoomService) JoinRoom(s *session.Session, msg *protocol.JoinRoomRequest) error {
-	if err := s.Bind(msg.MasterUid); err != nil {
+func (rs *RoomService) JoinRoom(ctx context.Context, msg *protocol.JoinRoomRequest) error {
+	sess := session.CtxGetSession(ctx)
+	if err := sess.Bind(fmt.Sprintf("%d", msg.MasterUid)); err != nil {
 		return errors.Trace(err)
 	}
 
@@ -33,7 +36,7 @@ func (rs *RoomService) JoinRoom(s *session.Session, msg *protocol.JoinRoomReques
 	if err := rs.group.Broadcast("onNewUser", broadcast); err != nil {
 		return errors.Trace(err)
 	}
-	return rs.group.Add(s)
+	return rs.group.Add(sess)
 }
 
 type SyncMessage struct {
@@ -41,9 +44,11 @@ type SyncMessage struct {
 	Content string `json:"content"`
 }
 
-func (rs *RoomService) SyncMessage(s *session.Session, msg *SyncMessage) error {
+func (rs *RoomService) SyncMessage(ctx context.Context, msg *SyncMessage) error {
+	sess := session.CtxGetSession(ctx)
 	// Send an RPC to master server to stats
-	if err := s.RPC("TopicService.Stats", &protocol.MasterStats{Uid: s.UID()}); err != nil {
+	uid, _ := strconv.ParseInt(sess.UID(), 10, 64)
+	if err := sess.RPC(ctx, "TopicService.Stats", &protocol.MasterStats{Uid: uid}); err != nil {
 		return errors.Trace(err)
 	}
 
@@ -51,7 +56,7 @@ func (rs *RoomService) SyncMessage(s *session.Session, msg *SyncMessage) error {
 	return rs.group.Broadcast("onMessage", msg)
 }
 
-func (rs *RoomService) userDisconnected(s *session.Session) {
+func (rs *RoomService) userDisconnected(s session.Session) {
 	if err := rs.group.Leave(s); err != nil {
 		log.Println("Remove user from group failed", s.UID(), err)
 		return

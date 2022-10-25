@@ -18,6 +18,6 @@ func init() {
 	Services.Register(topicService)
 }
 
-func OnSessionClosed(s *session.Session) {
+func OnSessionClosed(s session.Session) {
 	topicService.userDisconnected(s)
 }
