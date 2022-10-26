@@ -286,7 +286,7 @@ func (n *Node) findOrCreateSession(sid int64, gateAddr string) (session.Session,
 	s, found := n.sessions[sid]
 	n.mu.RUnlock()
 	if !found {
-		log.Println(sid, gateAddr, n.ServiceAddr)
+		//log.Println(sid, gateAddr, n.ServiceAddr)
 		conns, err := n.rpcClient.getConnPool(gateAddr)
 		if err != nil {
 			return nil, err

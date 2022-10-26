@@ -2,10 +2,10 @@ package cluster
 
 import (
 	"context"
-	"fmt"
 	"github.com/lonng/nano/benchmark/io"
 	"github.com/lonng/nano/benchmark/testdata"
 	"github.com/lonng/nano/component"
+	"github.com/lonng/nano/internal/log"
 	"github.com/lonng/nano/session"
 	. "github.com/pingcap/check"
 	"strings"
@@ -24,24 +24,26 @@ type (
 
 func (c *MasterComponent) Test(ctx context.Context, _ []byte) error {
 	sess := session.CtxGetSession(ctx)
+	log.Println("MasterComponent.Test", sess.ID())
 	return sess.Push("test", &testdata.Pong{Content: "master server pong"})
 }
 
 func (c *GateComponent) Test(ctx context.Context, ping *testdata.Ping) error {
 	sess := session.CtxGetSession(ctx)
+	log.Println("GateComponent.Test", sess.ID())
 	return sess.Push("test", &testdata.Pong{Content: "gate server pong"})
 }
 
 func (c *GateComponent) Test2(ctx context.Context, ping *testdata.Ping) error {
 	sess := session.CtxGetSession(ctx)
+	log.Println("GateComponent.Test", sess.ID())
 	return sess.Response(ctx, &testdata.Pong{Content: "gate server pong2"})
 }
 
 func (c *GameComponent) Test(ctx context.Context, _ []byte) error {
-	fmt.Println("GameComponent.Test")
 	sess := session.CtxGetSession(ctx)
 	//sess.Set("GameComponent", c.Schedule)
-	fmt.Println(sess.ID())
+	log.Println("GameComponent.Test", sess.ID())
 	//time.Sleep(time.Minute)
 	return sess.Push("test", &testdata.Pong{Content: "game server pong"})
 }
@@ -49,7 +51,7 @@ func (c *GameComponent) Test(ctx context.Context, _ []byte) error {
 func (c *GameComponent) Test2(ctx context.Context, ping *testdata.Ping) error {
 	sess := session.CtxGetSession(ctx)
 	//panic("=========================")
-	fmt.Println("test2", sess.ID())
+	log.Println("GameComponent.Test2", sess.ID())
 	return sess.Response(ctx, &testdata.Pong{Content: "game server pong2"})
 }
 
@@ -154,4 +156,5 @@ func (s *nodeSuite) TestNodeStartup(c *C) {
 	err = connector.Notify("MasterComponent.Test", &testdata.Ping{Content: "ping"})
 	c.Assert(err, IsNil)
 	c.Assert(strings.Contains(<-onResult, "master server pong"), IsTrue)
+
 }

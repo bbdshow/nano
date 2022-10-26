@@ -1,4 +1,11 @@
 Fork: lonng/nano
+1. session interface, sid unique, session bind in context
+2. cluster  new_*
+3. timer
+4. concurrent scheduler
+5. register component method func(ctx context.Context, in *msg) error
+# TODO
+1. Master 心跳，异常，主动剔除
 # Nano [![Build Status][1]][2] [![GoDoc][3]][4] [![Go Report Card][5]][6] [![MIT licensed][7]][8] 
 
 [1]: https://github.com/lonng/nano/actions/workflows/go.yml/badge.svg?branch=master
