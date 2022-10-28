@@ -11,6 +11,7 @@ import (
 var pid = os.Getpid() % 100
 var num int64
 
+// UniqueSessionId 可通过sessionId 得出创建时间与进程
 func UniqueSessionId() int64 {
 	i := atomic.AddInt64(&num, 1) % 10000
 	milli := time.Now().UnixMilli()

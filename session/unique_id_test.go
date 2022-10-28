@@ -7,7 +7,7 @@ import (
 
 func TestUniqueSessionId(t *testing.T) {
 	concurrent := 1000
-	count := 10000
+	count := 100000
 	m := sync.Map{}
 	wg := sync.WaitGroup{}
 	for concurrent > 0 {
