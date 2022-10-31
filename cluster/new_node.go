@@ -331,7 +331,7 @@ func (n *Node) HandleRequest(ctx context.Context, req *clusterpb.RequestMessage)
 		msg: msg,
 		mid: req.Id,
 	}
-	n.handler.chanLocalMsg <- uMsg
+	n.handler.sendUnhandledMessage(uMsg, false)
 	return &clusterpb.MemberHandleResponse{}, nil
 }
 
@@ -358,7 +358,7 @@ func (n *Node) HandleNotify(ctx context.Context, req *clusterpb.NotifyMessage) (
 		msg: msg,
 		mid: 0,
 	}
-	n.handler.chanLocalMsg <- uMsg
+	n.handler.sendUnhandledMessage(uMsg, false)
 
 	return &clusterpb.MemberHandleResponse{}, nil
 }

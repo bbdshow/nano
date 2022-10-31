@@ -117,10 +117,10 @@ func Listen(addr string, opts ...Option) {
 	}
 
 	// 开启全局定时器
-	timer.Run()
+	go timer.Run()
+	log.Println("pid ", os.Getpid())
 	sg := make(chan os.Signal)
 	signal.Notify(sg, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGKILL, syscall.SIGTERM)
-
 	select {
 	case <-env.Die:
 		log.Println("The app will shutdown in a few seconds")
@@ -130,9 +130,11 @@ func Listen(addr string, opts ...Option) {
 
 	log.Println("Nano server is stopping...")
 
+	timer.Close()
+	node.Handler().CloseScheduler()
+
 	node.Shutdown()
 	runtime.CurrentNode = nil
-	timer.Close()
 	atomic.StoreInt32(&running, 0)
 }
 

@@ -12,16 +12,35 @@ import (
 	"reflect"
 	"runtime/debug"
 	"strings"
+	"sync/atomic"
+	"time"
 )
 
 func (h *Handler) Scheduler(n int) {
+	closeCheckTimer := time.NewTicker(5 * time.Second)
 	for {
 		select {
 		case localMsg := <-h.chanLocalMsg:
 			h.localProcess(localMsg.ctx, localMsg.mid, localMsg.msg)
 		case remoteMsg := <-h.chanRemoteMsg:
 			h.remoteProcess(remoteMsg.ctx, remoteMsg.msg)
+		case <-closeCheckTimer.C:
+			if h.isClosed() && len(h.chanLocalMsg) == 0 && len(h.chanRemoteMsg) == 0 {
+				// 关闭且消息已处理完成
+				closeCheckTimer.Stop()
+				h.chExit <- struct{}{}
+				return
+			}
 		}
+	}
+}
+
+func (h *Handler) CloseScheduler() {
+	// 关闭
+	atomic.StoreInt32(&h.closed, 1)
+	select {
+	case <-h.chExit:
+		log.Println("CloseScheduler")
 	}
 }
 

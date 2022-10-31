@@ -9,6 +9,7 @@ import (
 	"net"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lonng/nano/component"
@@ -89,6 +90,7 @@ type Handler struct {
 	pipeline    pipeline.Pipeline
 	currentNode *Node
 
+	closed int32
 	chExit chan struct{}
 }
 
@@ -103,6 +105,7 @@ func NewHandler(currentNode *Node, pipeline pipeline.Pipeline) *Handler {
 
 		pipeline:    pipeline,
 		currentNode: currentNode,
+		chExit:      make(chan struct{}, 1),
 	}
 
 	return h
@@ -346,8 +349,23 @@ func (h *Handler) processMessage(agent *agent, msg *message.Message) {
 	}
 	_, found := h.localHandlers[msg.Route]
 	if !found {
-		h.chanRemoteMsg <- uMsg
+		h.sendUnhandledMessage(uMsg, true)
 	} else {
-		h.chanLocalMsg <- uMsg
+		h.sendUnhandledMessage(uMsg, false)
 	}
+}
+
+func (h *Handler) isClosed() bool {
+	return atomic.LoadInt32(&h.closed) == 1
+}
+
+func (h *Handler) sendUnhandledMessage(msg unhandledMessage, isRemote bool) {
+	if h.isClosed() {
+		return
+	}
+	if isRemote {
+		h.chanRemoteMsg <- msg
+		return
+	}
+	h.chanLocalMsg <- msg
 }

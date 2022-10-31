@@ -4,6 +4,7 @@ Fork: lonng/nano
 3. timer
 4. concurrent scheduler
 5. register component method func(ctx context.Context, in *msg) error
+6. CloseScheduler ensure chan all msg processed
 # TODO
 1. Master 心跳，异常，主动剔除
 # Nano [![Build Status][1]][2] [![GoDoc][3]][4] [![Go Report Card][5]][6] [![MIT licensed][7]][8] 
