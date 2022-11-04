@@ -111,6 +111,9 @@ func runMaster(args *cli.Context) error {
 		nano.WithComponents(master.Services),
 		nano.WithSerializer(json.NewSerializer()),
 		nano.WithDebugMode(),
+		nano.WithOnUnregister(func(s string) {
+			log.Println("WithOnUnregister", s)
+		}),
 	)
 
 	return nil

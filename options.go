@@ -161,3 +161,12 @@ func WithConcurrentScheduler(n int) Option {
 		opt.ConcurrentScheduler = n
 	}
 }
+
+// WithOnUnregister master handler unregister rpc do func
+func WithOnUnregister(f func(string)) Option {
+	return func(opt *cluster.Options) {
+		if f != nil {
+			opt.OnUnregister = f
+		}
+	}
+}

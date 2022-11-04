@@ -22,11 +22,13 @@ package cluster
 
 import (
 	"github.com/lonng/nano/cluster/clusterpb"
+	"time"
 )
 
 type Member struct {
-	isMaster   bool
-	memberInfo *clusterpb.MemberInfo
+	isMaster        bool
+	memberInfo      *clusterpb.MemberInfo
+	heartbeatLastAt time.Time
 }
 
 func (m *Member) MemberInfo() *clusterpb.MemberInfo {

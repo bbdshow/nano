@@ -35,7 +35,11 @@ type Options struct {
 	TSLCertificate      string
 	TSLKey              string
 	ConcurrentScheduler int // 并发调度器
+	OnUnregister        func(serverAddr string)
 }
+
+//// OnUnregister 注销执行方法
+//type OnUnregister func(serverAddr string)
 
 // Node represents a node in nano cluster, which will contains a group of services.
 // All services will register to cluster and messages will be forwarded to the node
@@ -51,6 +55,9 @@ type Node struct {
 
 	mu       sync.RWMutex
 	sessions map[int64]session.Session
+
+	once          sync.Once
+	heartbeatExit chan struct{}
 }
 
 func (n *Node) Startup() error {
@@ -161,10 +168,33 @@ func (n *Node) initNode() error {
 			log.Println("Register current node to cluster failed", err, "and will retry in", n.RetryInterval.String())
 			time.Sleep(n.RetryInterval)
 		}
-
 	}
 
+	// 集群模式，开启心跳
+	n.sendHeartbeat()
+
 	return nil
+}
+
+func (n *Node) sendHeartbeat() {
+	if n.heartbeatExit == nil {
+		n.heartbeatExit = make(chan struct{})
+	}
+	n.once.Do(func() {
+		go func() {
+			ticker := time.NewTicker(env.Heartbeat)
+			for {
+				select {
+				case <-ticker.C:
+					n.heartbeat()
+				case <-n.heartbeatExit:
+					log.Println("member heartbeat exit")
+					ticker.Stop()
+					return
+				}
+			}
+		}()
+	})
 }
 
 // Shutdown all components registered by application, that
@@ -181,7 +211,9 @@ func (n *Node) Shutdown() {
 	for i := length - 1; i >= 0; i-- {
 		components[i].Comp.Shutdown()
 	}
-
+	if n.heartbeatExit != nil {
+		close(n.heartbeatExit)
+	}
 	if !n.IsMaster && n.AdvertiseAddr != "" {
 		pool, err := n.rpcClient.getConnPool(n.AdvertiseAddr)
 		if err != nil {
@@ -387,6 +419,7 @@ func (n *Node) NewMember(_ context.Context, req *clusterpb.NewMemberRequest) (*c
 }
 
 func (n *Node) DelMember(_ context.Context, req *clusterpb.DelMemberRequest) (*clusterpb.DelMemberResponse, error) {
+	log.Println("node DelMember", req.String())
 	n.handler.delMember(req.ServiceAddr)
 	n.cluster.delMember(req.ServiceAddr)
 	return &clusterpb.DelMemberResponse{}, nil
@@ -416,4 +449,27 @@ func (n *Node) CloseSession(_ context.Context, req *clusterpb.CloseSessionReques
 		s.Close()
 	}
 	return &clusterpb.CloseSessionResponse{}, nil
+}
+
+// 定时向master发送注册信息
+func (n *Node) heartbeat() {
+	if n.AdvertiseAddr == "" || n.IsMaster {
+		return
+	}
+	pool, err := n.rpcClient.getConnPool(n.AdvertiseAddr)
+	if err != nil {
+		log.Println("rpcClient master conn", err)
+		return
+	}
+	masterCli := clusterpb.NewMasterClient(pool.Get())
+	if _, err := masterCli.Register(context.Background(), &clusterpb.RegisterRequest{
+		MemberInfo: &clusterpb.MemberInfo{
+			Label:       n.Label,
+			ServiceAddr: n.ServiceAddr,
+			Services:    n.handler.LocalService(),
+		},
+		IsHeartbeat: true,
+	}); err != nil {
+		log.Println("heartbeat Register", err)
+	}
 }

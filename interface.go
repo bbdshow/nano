@@ -77,7 +77,6 @@ func Listen(addr string, opts ...Option) {
 	for _, option := range opts {
 		option(&opt)
 	}
-
 	// Use listen address as client address in non-cluster mode
 	if !opt.IsMaster && opt.AdvertiseAddr == "" && opt.ClientAddr == "" {
 		log.Println("The current server running in singleton mode")
@@ -118,7 +117,7 @@ func Listen(addr string, opts ...Option) {
 
 	// 开启全局定时器
 	go timer.Run()
-	log.Println("pid ", os.Getpid())
+	log.Println("node pid", os.Getpid())
 	sg := make(chan os.Signal)
 	signal.Notify(sg, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGKILL, syscall.SIGTERM)
 	select {

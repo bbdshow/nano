@@ -1,12 +1,12 @@
 Fork: lonng/nano
-1. session interface, sid unique, session bind in context
-2. cluster  new_*
-3. timer
-4. concurrent scheduler
-5. register component method func(ctx context.Context, in *msg) error
-6. CloseScheduler ensure chan all msg processed
-# TODO
-1. Master 心跳，异常，主动剔除
+1. 定义 session 接口, SessionId 使用随机数(伪)建立全局唯一ID, session 实体 Set context.Value
+2. cluster 包修改过的已 new_* 命名，原文件保留
+3. timer 修改一下结构
+4. 进程全局调度器，修改成进程handler内，并发调度器。保证handler处理不阻塞。
+5. 注册组件，修改注册方法接口，采用 context 参数开头，保证兼容性 func(ctx context.Context, in *msg) error
+6. 优雅关闭调度器，保证当前所有消息都消费完毕在退出
+7. 利用Master维护各节点的心跳，保证异常节点的Unregister的执行
+
 # Nano [![Build Status][1]][2] [![GoDoc][3]][4] [![Go Report Card][5]][6] [![MIT licensed][7]][8] 
 
 [1]: https://github.com/lonng/nano/actions/workflows/go.yml/badge.svg?branch=master

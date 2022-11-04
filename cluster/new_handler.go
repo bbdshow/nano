@@ -143,8 +143,20 @@ func (h *Handler) addRemoteService(member *clusterpb.MemberInfo) {
 	defer h.mu.Unlock()
 
 	for _, s := range member.Services {
-		log.Println("Register remote service", s)
-		h.remoteServices[s] = append(h.remoteServices[s], member)
+		//log.Println("Register remote Handler service", s)
+		members := h.remoteServices[s]
+		// 避免重复注册
+		isHit := false
+		for _, m := range members {
+			if member.ServiceAddr == m.ServiceAddr {
+				m.Services = member.Services
+				m.Label = member.Label
+				isHit = true
+			}
+		}
+		if !isHit {
+			h.remoteServices[s] = append(h.remoteServices[s], member)
+		}
 	}
 }
 
@@ -222,7 +234,6 @@ func (h *Handler) handle(conn net.Conn) {
 
 		members := h.currentNode.cluster.remoteAddrs()
 		for _, remote := range members {
-			log.Println("Notify remote server", remote)
 			pool, err := h.currentNode.rpcClient.getConnPool(remote)
 			if err != nil {
 				log.Println("Cannot retrieve connection pool for address", remote, err)
@@ -239,7 +250,7 @@ func (h *Handler) handle(conn net.Conn) {
 			}
 		}
 
-		agent.Close()
+		_ = agent.Close()
 		if env.Debug {
 			log.Println(fmt.Sprintf("Session read goroutine exit, SessionID=%d, UID=%s", agent.session.ID(), agent.session.UID()))
 		}
