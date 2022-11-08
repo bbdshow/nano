@@ -6,6 +6,7 @@ Fork: lonng/nano
 5. 注册组件，修改注册方法接口，采用 context 参数开头，保证兼容性 func(ctx context.Context, in *msg) error
 6. 优雅关闭调度器，保证当前所有消息都消费完毕在退出
 7. 利用Master维护各节点的心跳，保证异常节点的Unregister的执行
+8. 修改Pipeline，添加ctx参数，用于实现dump请求记录日志或者一些中间设置数据操作
 
 # Nano [![Build Status][1]][2] [![GoDoc][3]][4] [![Go Report Card][5]][6] [![MIT licensed][7]][8] 
 
