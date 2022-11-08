@@ -294,7 +294,7 @@ func (a *agent) write() {
 				ID:    data.mid,
 			}
 			if pipe := a.pipeline; pipe != nil {
-				err := pipe.Outbound().Process(a.session, m)
+				err := pipe.Outbound().Process(data.ctx, a.session, m)
 				if err != nil {
 					log.Println("broken pipeline", err.Error())
 					break

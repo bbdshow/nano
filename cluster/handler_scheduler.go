@@ -50,7 +50,7 @@ func (h *Handler) localProcess(ctx context.Context, lastMid uint64, msg *message
 	handler := h.localHandlers[msg.Route]
 
 	if pipe := h.pipeline; pipe != nil {
-		err := pipe.Inbound().Process(sess, msg)
+		err := pipe.Inbound().Process(ctx, sess, msg)
 		if err != nil {
 			log.Println("Pipeline process failed: " + err.Error())
 			return

@@ -59,12 +59,12 @@ type (
 	}
 )
 
-func (stats *stats) outbound(s session.Session, msg *pipeline.Message) error {
+func (stats *stats) outbound(ctx context.Context, s session.Session, msg *pipeline.Message) error {
 	stats.outboundBytes += len(msg.Data)
 	return nil
 }
 
-func (stats *stats) inbound(s session.Session, msg *pipeline.Message) error {
+func (stats *stats) inbound(ctx context.Context, s session.Session, msg *pipeline.Message) error {
 	stats.inboundBytes += len(msg.Data)
 	return nil
 }
